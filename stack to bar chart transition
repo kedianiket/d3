@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stacked to Grouped Bar Chart</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .button-container {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Stacked to Grouped Bar Chart Transition</h2>
+  <div class="button-container">
+    <button id="toggle-button">Toggle</button>
+  </div>
+  <div id="chart-container"></div>
+
+  <script>
+    let data = [
+      { fund: "A", Beta: "Size", population: 1.53 },
+      { fund: "B", Beta: "Size", population: 0.362 },
+      { fund: "C", Beta: "Size", population: 0.998 },
+      { fund: "D", Beta: "Size", population: 0.71 },
+      { fund: "E", Beta: "Size", population: 0.54 },
+      { fund: "F", Beta: "Size", population: 0.28 },
+      { fund: "G", Beta: "Size", population: 0.048 },
+      { fund: "H", Beta: "Size", population: 1.319 },
+      { fund: "I", Beta: "Size", population: 0.794 },
+      { fund: "J", Beta: "Size", population: 0.67 },
+      { fund: "K", Beta: "Size", population: 0.214 },
+      { fund: "A", Beta: "Style", population: -0.827 },
+      { fund: "B", Beta: "Style", population: -0.155 },
+      { fund: "C", Beta: "Style", population: 0.803 },
+      { fund: "D", Beta: "Style", population: -0.763 },
+      { fund: "E", Beta: "Style", population: -0.71 },
+      { fund: "F", Beta: "Style", population: -0.08 },
+      { fund: "G", Beta: "Style", population: -0.033 },
+      { fund: "H", Beta: "Style", population: -0.183 },
+      { fund: "I", Beta: "Style", population: -0.52 },
+      { fund: "J", Beta: "Style", population: -1.093 },
+      { fund: "K", Beta: "Style", population: -0.447 },
+      { fund: "A", Beta: "Momentum", population: -0.569 },
+      { fund: "B", Beta: "Momentum", population: 0.627 },
+      { fund: "C", Beta: "Momentum", population: 0.109 },
+      { fund: "D", Beta: "Momentum", population: 0.17 },
+      { fund: "E", Beta: "Momentum", population: 0.604 },
+      { fund: "F", Beta: "Momentum", population: 0.203 },
+      { fund: "G", Beta: "Momentum", population: 0.273 },
+      { fund: "H", Beta: "Momentum", population: 0.197 },
+      { fund: "I", Beta: "Momentum", population: -0.875 },
+      { fund: "J", Beta: "Momentum", population: 0.285 },
+      { fund: "K", Beta: "Momentum", population: 0.285 },
+      { fund: "A", Beta: "Market", population: 0.965 },
+      { fund: "B", Beta: "Market", population: 0.848 },
+      { fund: "C", Beta: "Market", population: 0.994 },
+      { fund: "D", Beta: "Market", population: 1.002 },
+      { fund: "E", Beta: "Market", population: 0.731 },
+      { fund: "F", Beta: "Market", population: 1.012 },
+      { fund: "G", Beta: "Market", population: 0.991 },
+      { fund: "H", Beta: "Market", population: 0.914 },
+      { fund: "I", Beta: "Market", population: 0.928 },
+      { fund: "J", Beta: "Market", population: 0.966 },
+      { fund: "K", Beta: "Market", population: 0.999 },
+    ];
+
+    // Subtract 1 from all market betas
+    data = data.map(d => d.Beta === "Market" ? {...d, population: d.population - 1} : d);
+
+    // Group data by fund
+    const groupedData = d3.group(data, d => d.fund);
+
+    // Calculate absolute sum of betas for each fund for sorting purposes only
+    const absSumBetas = Array.from(groupedData, ([key, values]) => ({
+      fund: key,
+      absSum: d3.sum(values, d => Math.abs(d.population))
+    }));
+
+    // Sort data by absolute sum of betas
+    absSumBetas.sort((a, b) => d3.descending(a.absSum, b.absSum));
+
+    // Sort original data by fund order based on absolute sum of betas
+    const sortedData = absSumBetas.flatMap(d => groupedData.get(d.fund));
+
+    // Ensure Market is the first stack
+    const uniqueBetas = ["Market", ...[...new Set(sortedData.map(d => d.Beta))].filter(beta => beta !== "Market")];
+    const series = d3.stack()
+      .keys(uniqueBetas)
+      .value(([, D], key) => D.get(key)?.population || 0)
+      .offset(d3.stackOffsetDiverging)
+      (d3.index(sortedData, d => d.fund, d => d.Beta));
+
+    // Define chart dimensions and margins
+    const width = 928;
+    const height = 500;
+    const marginTop = 10;
+    const marginRight = 10;
+    const marginBottom = 100;
+    const marginLeft = 40;
+
+    // Create scales
+    const x = d3.scaleBand()
+      .domain(absSumBetas.map(d => d.fund))
+      .range([marginLeft, width - marginRight])
+      .padding(0.1);
+
+    const y = d3.scaleLinear()
+      .domain([
+        d3.min(series, d => d3.min(d, d => d[0])),
+        d3.max(series, d => d3.max(d, d => d[1]))
+      ])
+      .nice()
+      .rangeRound([height - marginBottom, marginTop]);
+
+    const color = d3.scaleOrdinal()
+      .domain(uniqueBetas)
+      .range(d3.schemeBlues[uniqueBetas.length + 2].slice(1)) // Use d3.schemeBlues and slice to skip the lightest shade
+      .unknown("#ccc");
+
+    const formatValue = x => isNaN(x) ? "N/A" : x.toLocaleString("en");
+
+    const svg = d3.select("#chart-container").append("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .attr("viewBox", [0, 0, width, height])
+      .attr("style", "max-width: 100%; height: auto;");
+
+    const g = svg.append("g");
+
+    // Append stacked bars
+    const rects = g.selectAll("g")
+      .data(series)
+      .join("g")
+      .attr("fill", d => color(d.key))
+      .selectAll("rect")
+      .data(D => D.map(d => (d.key = D.key, d)))
+      .join("rect")
+      .attr("x", d => x(d.data[0]))
+      .attr("y", d => y(d[1]))
+      .attr("height", d => Math.abs(y(d[0]) - y(d[1])))
+      .attr("width", x.bandwidth())
+      .append("title")
+      .text(d => `${d.data[0]} ${d.key}\n${formatValue(d.data[1].get(d.key)?.population)}`);
+
+    svg.append("g")
+      .attr("transform", `translate(0,${height - marginBottom})`)
+      .call(d3.axisBottom(x).tickSizeOuter(0))
+      .call(g => g.selectAll(".domain").remove())
+      .selectAll("text")
+      .attr("transform", "rotate(-45)")
+      .attr("text-anchor", "end");
+
+    svg.append("g")
+      .attr("transform", `translate(${marginLeft},0)`)
+      .attr("class", "y-axis")
+      .call(d3.axisLeft(y).ticks(null, "s"))
+      .call(g => g.selectAll(".domain").remove());
+
+    const legend = svg.append("g")
+      .attr("font-family", "sans-serif")
+      .attr("font-size", 10)
+      .attr("text-anchor", "end")
+      .selectAll("g")
+      .data(series.map(d => d.key).reverse())
+      .join("g")
+      .attr("transform", (d, i) => `translate(0,${i * 20})`);
+
+    legend.append("rect")
+      .attr("x", width - 19)
+      .attr("width", 19)
+      .attr("height", 19)
+      .attr("fill", color);
+
+    legend.append("text")
+      .attr("x", width - 24)
+      .attr("y", 9.5)
+      .attr("dy", "0.35em")
+      .text(d => d);
+
+    function transitionGrouped() {
+      // Update y domain to include 0, ensuring bars start from 0
+      y.domain([
+        d3.min(data, d => Math.min(d.population, 0)),
+        d3.max(data, d => Math.max(d.population, 0))
+      ]).nice();
+
+      svg.select(".y-axis")
+        .transition()
+        .duration(500)
+        .call(d3.axisLeft(y).ticks(null, "s"));
+
+      g.selectAll("rect")
+        .transition()
+        .duration(500)
+        .delay((d, i) => i * 20)
+        .attr("x", d => x(d.data[0]) + x.bandwidth() / uniqueBetas.length * uniqueBetas.indexOf(d.key))
+        .attr("width", x.bandwidth() / uniqueBetas.length)
+        .transition()
+        .attr("y", d => y(Math.max(0, d.data[1].get(d.key)?.population)))
+        .attr("height", d => Math.abs(y(0) - y(d.data[1].get(d.key)?.population)));
+    }
+
+    function transitionStacked() {
+      y.domain([
+        d3.min(series, d => d3.min(d, d => d[0])),
+        d3.max(series, d => d3.max(d, d => d[1]))
+      ]).nice();
+
+      svg.select(".y-axis")
+        .transition()
+        .duration(500)
+        .call(d3.axisLeft(y).ticks(null, "s"));
+
+      g.selectAll("rect")
+        .transition()
+        .duration(500)
+        .delay((d, i) => i * 20)
+        .attr("x", d => x(d.data[0]))
+        .attr("width", x.bandwidth())
+        .transition()
+        .attr("y", d => y(d[1]))
+        .attr("height", d => Math.abs(y(d[0]) - y(d[1])));
+    }
+
+    let isStacked = true;
+    document.getElementById("toggle-button").addEventListener("click", () => {
+      isStacked = !isStacked;
+      if (isStacked) transitionStacked();
+      else transitionGrouped();
+    });
+  </script>
+</body>
+</html>
